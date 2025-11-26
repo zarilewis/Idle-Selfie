@@ -7,6 +7,7 @@ import { promptQuietForLoudResponse, sendMessageAs, sendNarratorMessage } from '
 import { extension_settings, getContext, renderExtensionTemplateAsync } from '../../../extensions.js';
 import { registerSlashCommand } from '../../../slash-commands.js';
 
+// NOTE: updated to Idle-Selfie
 const extensionName = 'third-party/Idle-Selfie';
 
 let idleTimer = null;
@@ -388,7 +389,7 @@ function toggleIdle() {
     extension_settings.idle.enabled = !extension_settings.idle.enabled;
     $('#idle_enabled').prop('checked', extension_settings.idle.enabled);
     $('#idle_enabled').trigger('input');
-    toastr.info(`Idle mode ${extension_settings.idle.enabled ? 'enabled' : 'disabled'}.`);
+    toastr.info(`Idle Selfie mode ${extension_settings.idle.enabled ? 'enabled' : 'disabled'}.`);
     resetIdleTimer();
 }
 
@@ -403,5 +404,6 @@ jQuery(async () => {
     if ($('#idle_random_time').prop('checked')) {
         $('#idle_timer_min').parent().show();
     }
-    registerSlashCommand('idle', toggleIdle, [], '– toggles idle mode', true, true);
+    // NOTE: changed slash command name so it doesn't collide with original Idle
+    registerSlashCommand('idle-selfie', toggleIdle, [], '– toggles Idle Selfie mode', true, true);
 });
