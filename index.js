@@ -34,7 +34,7 @@ let defaultSettings = {
     repeats: 2, // 0 = infinite
     sendAs: 'user',
     randomTime: false,
-    timeMin: 60,
+    timerMin: 60, // fixed from timeMin -> timerMin
     includePrompt: false,
 };
 
@@ -100,24 +100,53 @@ function resetIdleTimer() {
 }
 
 /**
+ * Build a system prompt that tells the AI to send a short, in-world selfie-style message.
+ * @param {string} basePrompt - A flavor prompt from the idle prompts list.
+ */
+function buildSelfieSystemPrompt(basePrompt) {
+    const context = getContext();
+    const charName = (context && context.name2) ? context.name2 : 'the character';
+
+    return `
+You are roleplaying as ${charName} in the current scene.
+
+The user has been idle for a while.
+Your next message should be a short, first-person, in-world "selfie" style message.
+
+Rules:
+- Write from ${charName}'s first-person perspective ("I").
+- 1–3 sentences max.
+- Describe a selfie or a moment right after taking a selfie.
+- Include pose, facial expression, outfit, setting, and overall vibe/mood.
+- Stay fully in character and in-world.
+- Do NOT mention cameras, prompts, AI, or that you were instructed to do this.
+${basePrompt ? `- Use this extra flavor as inspiration: ${basePrompt}` : ''}
+`.trim();
+}
+
+/**
  * Send a random idle prompt to the AI based on the extension settings.
- * Checks conditions like if the extension is enabled and repeat conditions.
+ * Now: sends a selfie-style system prompt instead of just a text fragment.
  */
 async function sendIdlePrompt() {
     if (!extension_settings.idle.enabled) return;
 
     // Check repeat conditions and waiting for a response
     if (repeatCount >= extension_settings.idle.repeats || $('#mes_stop').is(':visible')) {
-        //console.debug("Not sending idle prompt due to repeat conditions or waiting for a response.");
         resetIdleTimer();
         return;
     }
 
-    const randomPrompt = extension_settings.idle.prompts[
+    // Pick one of the existing idle prompts as "flavor" for the selfie
+    const basePrompt = extension_settings.idle.prompts[
         Math.floor(Math.random() * extension_settings.idle.prompts.length)
     ];
 
-    sendPrompt(randomPrompt);
+    const selfieSystemPrompt = buildSelfieSystemPrompt(basePrompt);
+
+    console.debug('Sending idle selfie system prompt');
+    sendPrompt(selfieSystemPrompt);
+
     repeatCount++;
     resetIdleTimer();
 }
@@ -362,8 +391,6 @@ function toggleIdle() {
     toastr.info(`Idle mode ${extension_settings.idle.enabled ? 'enabled' : 'disabled'}.`);
     resetIdleTimer();
 }
-
-
 
 jQuery(async () => {
     await loadSettingsHTML();
