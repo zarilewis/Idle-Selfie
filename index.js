@@ -114,9 +114,12 @@ You are roleplaying as ${charName} in the current scene.
 The user has been idle for a while.
 Your next message should be a short, first-person, in-world "selfie" style message.
 
-Rules:
+Strict rules:
 - Write from ${charName}'s first-person perspective ("I").
-- 1–3 sentences max.
+- ONE single paragraph only.
+- 1–3 sentences total.
+- Maximum ~60 words.
+- Do NOT repeat the same sentence or description.
 - Describe a selfie or a moment right after taking a selfie.
 - Include pose, facial expression, outfit, setting, and overall vibe/mood.
 - Stay fully in character and in-world.
