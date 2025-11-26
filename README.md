@@ -1,5 +1,5 @@
-# Extension-Idle
+# Idle-Selfie
 
-Adds "idle prompting" after the user has been idle for some time to organically continue the conversation.
+Character sends a selfie via automated prompt after the user has been idle for some time for imersiveness.
 
-Idea and implementation by [city-unit](https://github.com/city-unit).
+I'm literally just vibe-coding this for my own AI Husbando thirst reasons don't @ me bro
