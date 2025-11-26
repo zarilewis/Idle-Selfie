@@ -1,61 +1,73 @@
 <div class="idle-settings">
   <div class="inline-drawer">
-    <div class="inline-drawer-toggle inline-drawer-header" title="Indicates the settings for the idle feature.">
-      <b>Idle</b>
+    <div class="inline-drawer-toggle inline-drawer-header" title="Settings for the Idle Selfie feature. Automatically triggers in-character selfie-style messages after inactivity.">
+      <b>Idle Selfie</b>
       <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
     </div>
 
     <div class="inline-drawer-content">
       <div class="idle_block flex-container">
-        <input id="idle_enabled" type="checkbox" title="Toggle to enable or disable the idle feature." />
+        <input id="idle_enabled" type="checkbox" title="Toggle to enable or disable the Idle Selfie feature." />
         <label for="idle_enabled">Enabled</label>
       </div>
+
       <div class="idle_block flex-container">
-        <input id="idle_repeats" class="text_pole widthUnset" type="number" min="0" max="100000" step="1" title="The number of times the idle action will be prompted." />
-        <label for="idle_repeats">Idle Prompt Count</label>
+        <input id="idle_repeats" class="text_pole widthUnset" type="number" min="0" max="100000" step="1" title="How many times Idle Selfie can trigger before stopping (0 = infinite)." />
+        <label for="idle_repeats">Idle Selfie Count</label>
       </div>
+
       <div class="idle_block flex-container" style="display: none;">
-        <input id="idle_timer_min" class="text_pole widthUnset" type="number" min="0" max="600000" step="1" title="The minimum amount of time in seconds before the idle action is triggered." />
+        <input id="idle_timer_min" class="text_pole widthUnset" type="number" min="0" max="600000" step="1" title="Minimum idle time in seconds before a selfie-style message is triggered (used when Randomize Time is on)." />
         <label for="idle_timer_min">Idle Timer Minimum (seconds)</label>
       </div>
+
       <div class="idle_block flex-container">
-        <input id="idle_timer" class="text_pole widthUnset" type="number" min="0" max="600000" step="1" title="The amount of time in seconds before the idle action is triggered." />
+        <input id="idle_timer" class="text_pole widthUnset" type="number" min="0" max="600000" step="1" title="Idle time in seconds before a selfie-style message is triggered." />
         <label for="idle_timer">Idle Timer (seconds)</label>
       </div>
+
       <div class="idle_block flex-container">
-        <label for="idle_prompts">Idle Prompts</label>
-        <textarea id="idle_prompts" class="text_pole textarea_compact" rows="6" title="The prompts to be sent to initial the idle reply (newline seperated)."></textarea>
+        <label for="idle_prompts">Selfie Flavor Prompts</label>
+        <textarea id="idle_prompts" class="text_pole textarea_compact" rows="6" title="Flavor/emote lines used as inspiration for the in-character selfie message (one per line)."></textarea>
       </div>
+
       <div class="idle_block flex-container">
-        <input id="idle_use_continuation" type="checkbox" title="Indicates whether the idle action will just use the 'Continue' function instead of a prompt." />
-        <label for="idle_use_continuation">Use Continuation</label>
+        <input id="idle_use_continuation" type="checkbox" title="Use the 'Continue' function instead of the selfie-style behavior. (Turn OFF for Idle Selfie to work as designed.)" />
+        <label for="idle_use_continuation">Use Continuation (classic Idle)</label>
       </div>
+
       <div class="idle_block flex-container">
-        <input type="checkbox" id="idle_use_regenerate" title="Indicates whether the idle action will use the 'Regenerate' function.">
+        <input type="checkbox" id="idle_use_regenerate" title="Use the 'Regenerate' function instead of the selfie-style behavior. (Turn OFF for Idle Selfie.)">
         <label for="idle_use_regenerate">Use Regenerate</label>
       </div>
+
       <div class="idle_block flex-container">
-        <input type="checkbox" id="idle_use_swipe" title="Indicates whether the idle action will use the 'Swipe' function.">
-        <label for="idle_use_swipe">Use Regenerate with history (aka Swipe)</label>
+        <input type="checkbox" id="idle_use_swipe" title="Use the 'Swipe' function instead of the selfie-style behavior. (Turn OFF for Idle Selfie.)">
+        <label for="idle_use_swipe">Use Regenerate with history (Swipe)</label>
       </div>
+
       <div class="idle_block flex-container">
-        <input id="idle_use_impersonation" type="checkbox" title="Indicates whether the idle action will use the 'Impersonate' function." />
+        <input id="idle_use_impersonation" type="checkbox" title="Use the 'Impersonate' function instead of the selfie-style behavior. (Turn OFF for Idle Selfie.)" />
         <label for="idle_use_impersonation">Use Impersonation</label>
       </div>
+
       <div class="idle_block mutually_exclusive_warning">
         (Continuation, Regenerate, Swipe, and Impersonation are mutually exclusive)
       </div>
+
       <div class="idle_block flex-container">
-        <input id="idle_random_time" type="checkbox" title="Indicates if the idle time should be randomized between a min/max value." />
+        <input id="idle_random_time" type="checkbox" title="Randomize the idle time between a minimum and maximum value." />
         <label for="idle_random_time">Randomize Time</label>
       </div>
+
       <div class="idle_block flex-container">
-        <input id="idle_include_prompt" type="checkbox" title="Indicates if the idle prompting should be included in context. (Sends as user)" />
-        <label for="idle_include_prompt">Include Idle Prompt</label>
+        <input id="idle_include_prompt" type="checkbox" title="If enabled, the selfie system prompt is included as visible text. For in-world behavior, leave this OFF." />
+        <label for="idle_include_prompt">Include Selfie Prompt in Context</label>
       </div>
+
       <div class="idle_block flex-container">
         <label for="idle_sendAs">Send As</label>
-        <select id="idle_sendAs" class="text_pole" title="Determines how the idle message prompting is sent; as a user, character, system, or raw message.">
+        <select id="idle_sendAs" class="text_pole" title="How the Idle Selfie instruction is sent; for selfie behavior, 'System' is recommended.">
           <option value="user">User</option>
           <option value="char">Character</option>
           <option value="sys">System</option>
