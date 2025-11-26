@@ -6,6 +6,8 @@
     </div>
 
     <div class="inline-drawer-content">
+
+      <!-- Enable / Count -->
       <div class="idle_block flex-container">
         <input id="idle_enabled" type="checkbox" title="Toggle to enable or disable the Idle Selfie feature." />
         <label for="idle_enabled">Enabled</label>
@@ -16,6 +18,7 @@
         <label for="idle_repeats">Idle Selfie Count</label>
       </div>
 
+      <!-- Timing -->
       <div class="idle_block flex-container" style="display: none;">
         <input id="idle_timer_min" class="text_pole widthUnset" type="number" min="0" max="600000" step="1" title="Minimum idle time in seconds before a selfie-style message is triggered (used when Randomize Time is on)." />
         <label for="idle_timer_min">Idle Timer Minimum (seconds)</label>
@@ -26,11 +29,13 @@
         <label for="idle_timer">Idle Timer (seconds)</label>
       </div>
 
+      <!-- Prompts -->
       <div class="idle_block flex-container">
         <label for="idle_prompts">Selfie Flavor Prompts</label>
         <textarea id="idle_prompts" class="text_pole textarea_compact" rows="6" title="Flavor/emote lines used as inspiration for the in-character selfie message (one per line)."></textarea>
       </div>
 
+      <!-- Classic Idle toggles -->
       <div class="idle_block flex-container">
         <input id="idle_use_continuation" type="checkbox" title="Use the 'Continue' function instead of the selfie-style behavior. (Turn OFF for Idle Selfie to work as designed.)" />
         <label for="idle_use_continuation">Use Continuation (classic Idle)</label>
@@ -55,6 +60,7 @@
         (Continuation, Regenerate, Swipe, and Impersonation are mutually exclusive)
       </div>
 
+      <!-- Randomize / Include -->
       <div class="idle_block flex-container">
         <input id="idle_random_time" type="checkbox" title="Randomize the idle time between a minimum and maximum value." />
         <label for="idle_random_time">Randomize Time</label>
@@ -65,6 +71,7 @@
         <label for="idle_include_prompt">Include Selfie Prompt in Context</label>
       </div>
 
+      <!-- Send As -->
       <div class="idle_block flex-container">
         <label for="idle_sendAs">Send As</label>
         <select id="idle_sendAs" class="text_pole" title="How the Idle Selfie instruction is sent; for selfie behavior, 'System' is recommended.">
@@ -75,21 +82,37 @@
         </select>
       </div>
 
+      <!-- Gemini Model -->
       <div class="idle_block flex-container">
-        <label for="idle_selfie_api_url">Nanobanana API URL</label>
-        <input id="idle_selfie_api_url" class="text_pole widthUnset" type="text" placeholder="https://api.nanobanana.ai/v1/generate" title="The URL for your nanobanana image generation endpoint." />
+        <label for="idle_selfie_model">Gemini Image Model</label>
+        <select id="idle_selfie_model" class="text_pole" title="Choose the Gemini model used to generate images.">
+          <option value="gemini-3.0-pro-image-preview">gemini-3.0-pro-image-preview</option>
+        </select>
       </div>
 
+      <!-- Aspect Ratio -->
       <div class="idle_block flex-container">
-        <label for="idle_selfie_api_key">Nanobanana API Key</label>
-        <input id="idle_selfie_api_key" class="text_pole widthUnset" type="password" placeholder="Enter API key" title="Your nanobanana API key (stored locally only)." />
+        <label for="idle_selfie_aspect">Aspect Ratio</label>
+        <select id="idle_selfie_aspect" class="text_pole" title="Aspect ratio for generated images.">
+          <option value="4:3" selected>4:3</option>
+          <option value="1:1">1:1</option>
+          <option value="16:9">16:9</option>
+          <option value="9:16">9:16</option>
+        </select>
       </div>
 
+      <!-- API key -->
+      <div class="idle_block flex-container">
+        <label for="idle_selfie_api_key">Gemini API Key</label>
+        <input id="idle_selfie_api_key" class="text_pole widthUnset" type="password" placeholder="Enter API key" title="Your Gemini API key (stored locally only)." />
+      </div>
+
+      <!-- Reference Image (optional) -->
       <div class="idle_block flex-container">
         <label for="idle_selfie_reference">Reference Image URL</label>
-        <input id="idle_selfie_reference" class="text_pole widthUnset" type="text" placeholder="optional: link to your character's base image" title="Optional: a reference portrait for consistent generation." />
+        <input id="idle_selfie_reference" class="text_pole widthUnset" type="text" placeholder="Optional: link to base character image" title="Optional: a reference portrait for consistent generation." />
       </div>
-      
+
       <hr class="sysHR" />
     </div>
   </div>
