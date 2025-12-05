@@ -12,8 +12,8 @@ const extensionName = 'third-party/Idle-Selfie';
 
 let idleTimer = null;
 let repeatCount = 0;
-let awaitingSelfieCapture = false;
-let selfieCaptureObserver = null;
+let mostRecentIdleCaption = null;      // NEW
+let waitingForIdleMessage = false;     // NEW
 
 let defaultSettings = {
     enabled: false,
@@ -34,43 +34,34 @@ let defaultSettings = {
     useRegenerate: false,
     useImpersonation: false,
     useSwipe: false,
-    repeats: 2, // 0 = infinite
+    repeats: 2,
     sendAs: 'user',
     randomTime: false,
-    timerMin: 60, // fixed from timeMin -> timerMin
+    timerMin: 60,
     includePrompt: false,
 
-    // new settings for image generation
-    selfieModel: 'gemini-3.0-pro-image-preview',
-    selfieAspect: '4:3',
-    selfieApiKey: '',
-    selfieReference: '',
-    generateImage: true, // if you want a way to toggle later
+    // NEW SETTINGS
+    geminiApiKey: '',
+    geminiModel: 'gemini-1.5-flash',
+    selfieEnabled: true,
 };
 
+//––––––––––––––––––––––––––––––––––––––––––––
+// SETTINGS LOADING
+//––––––––––––––––––––––––––––––––––––––––––––
 
-// TODO: Can we make this a generic function?
-/**
- * Load the extension settings and set defaults if they don't exist.
- */
 async function loadSettings() {
     if (!extension_settings.idle) {
-        console.log('Creating extension_settings.idle');
         extension_settings.idle = {};
     }
     for (const [key, value] of Object.entries(defaultSettings)) {
         if (!extension_settings.idle.hasOwnProperty(key)) {
-            console.log(`Setting default for: ${key}`);
             extension_settings.idle[key] = value;
         }
     }
     populateUIWithSettings();
 }
 
-// TODO: Can we make this a generic function too?
-/**
- * Populate the UI components with values from the extension settings.
- */
 function populateUIWithSettings() {
     $('#idle_timer').val(extension_settings.idle.timer).trigger('input');
     $('#idle_prompts').val(extension_settings.idle.prompts.join('\n')).trigger('input');
@@ -85,28 +76,25 @@ function populateUIWithSettings() {
     $('#idle_timer_min').val(extension_settings.idle.timerMin).trigger('input');
     $('#idle_include_prompt').prop('checked', extension_settings.idle.includePrompt).trigger('input');
 
-    // new fields
-    $('#idle_selfie_model').val(extension_settings.idle.selfieModel || 'gemini-3.0-pro-image-preview').trigger('input');
-    $('#idle_selfie_aspect').val(extension_settings.idle.selfieAspect || '4:3').trigger('input');
-    $('#idle_selfie_api_key').val(extension_settings.idle.selfieApiKey || '').trigger('input');
-    $('#idle_selfie_reference').val(extension_settings.idle.selfieReference || '').trigger('input');
+    // NEW UI BINDINGS
+    $('#idle_gemini_api').val(extension_settings.idle.geminiApiKey).trigger('input');
+    $('#idle_gemini_model').val(extension_settings.idle.geminiModel).trigger('input');
+    $('#idle_selfie_enabled').prop('checked', extension_settings.idle.selfieEnabled).trigger('input');
 }
 
-/**
- * Reset the idle timer based on the extension settings and context.
- */
+//––––––––––––––––––––––––––––––––––––––––––––
+// IDLE TIMER
+//––––––––––––––––––––––––––––––––––––––––––––
+
 function resetIdleTimer() {
-    console.debug('Resetting idle timer');
     if (idleTimer) clearTimeout(idleTimer);
     let context = getContext();
     if (!context.characterId && !context.groupID) return;
     if (!extension_settings.idle.enabled) return;
+
     if (extension_settings.idle.randomTime) {
-        // ensure these are ints
-        let min = extension_settings.idle.timerMin;
-        let max = extension_settings.idle.timer;
-        min = parseInt(min);
-        max = parseInt(max);
+        let min = parseInt(extension_settings.idle.timerMin);
+        let max = parseInt(extension_settings.idle.timer);
         let randomTime = (Math.random() * (max - min + 1)) + min;
         idleTimer = setTimeout(sendIdlePrompt, 1000 * randomTime);
     } else {
@@ -114,13 +102,13 @@ function resetIdleTimer() {
     }
 }
 
-/**
- * Build a system prompt that tells the AI to send a short, in-world selfie-style message.
- * @param {string} basePrompt - A flavor prompt from the idle prompts list.
- */
+//––––––––––––––––––––––––––––––––––––––––––––
+// BUILD SELFIE SYSTEM PROMPT
+//––––––––––––––––––––––––––––––––––––––––––––
+
 function buildSelfieSystemPrompt(basePrompt) {
     const context = getContext();
-    const charName = (context && context.name2) ? context.name2 : 'the character';
+    const charName = context?.name2 ?? 'the character';
 
     return `
 You are roleplaying as ${charName} in the current scene.
@@ -129,65 +117,53 @@ The user has been idle for a while.
 Your next message should be a short, first-person, in-world "selfie" style message.
 
 Strict rules:
-- Write from ${charName}'s first-person perspective ("I").
-- ONE single paragraph only.
-- 1–3 sentences total.
-- Maximum ~60 words.
-- Do NOT repeat the same sentence or description.
-- Describe a selfie or a moment right after taking a selfie.
-- Include pose, facial expression, outfit, setting, and overall vibe/mood.
-- Stay fully in character and in-world.
-- Do NOT mention cameras, prompts, AI, or that you were instructed to do this.
-${basePrompt ? `- Use this extra flavor as inspiration: ${basePrompt}` : ''}
+- Write from ${charName}'s first-person perspective.
+- ONE paragraph only.
+- 1–3 sentences, max 60 words.
+- Describe a selfie moment or just-after-selfie moment.
+- Include pose, facial expression, outfit, setting, and overall vibe.
+- Stay fully in character.
+- Do NOT mention cameras, prompts, or AI.
+${basePrompt ? `- Use this extra flavor: ${basePrompt}` : ''}
 `.trim();
 }
 
-/**
- * Send a random idle prompt to the AI based on the extension settings.
- * Now: sends a selfie-style system prompt instead of just a text fragment.
- */
+//––––––––––––––––––––––––––––––––––––––––––––
+// IDLE PROMPT SENDER
+//––––––––––––––––––––––––––––––––––––––––––––
+
 async function sendIdlePrompt() {
     if (!extension_settings.idle.enabled) return;
 
-    // Check repeat conditions and waiting for a response
     if (repeatCount >= extension_settings.idle.repeats || $('#mes_stop').is(':visible')) {
         resetIdleTimer();
         return;
     }
 
-    // Pick one of the existing idle prompts as "flavor" for the selfie
     const basePrompt = extension_settings.idle.prompts[
         Math.floor(Math.random() * extension_settings.idle.prompts.length)
     ];
 
-    const selfieSystemPrompt = buildSelfieSystemPrompt(basePrompt);
+    const selfieSystem = buildSelfieSystemPrompt(basePrompt);
 
-    console.debug('Sending idle selfie system prompt');
+    waitingForIdleMessage = true;
+    mostRecentIdleCaption = null;
 
-    // set a flag so the observer knows to capture the next in-character reply
-    awaitingSelfieCapture = true;
-    startSelfieCaptureObserver();
-
-    sendPrompt(selfieSystemPrompt);
+    sendPrompt(selfieSystem);
 
     repeatCount++;
     resetIdleTimer();
 }
 
-/**
- * Add our prompt to the chat and then send the chat to the backend.
- * @param {string} sendAs - The type of message to send. "user", "char", or "sys".
- * @param {string} prompt - The prompt text to send to the AI.
- */
+//––––––––––––––––––––––––––––––––––––––––––––
+// SEND LOUD MESSAGE
+//––––––––––––––––––––––––––––––––––––––––––––
+
 function sendLoud(sendAs, prompt) {
     if (sendAs === 'user') {
         prompt = substituteParams(prompt);
-
         $('#send_textarea').val(prompt);
-
-        // Set the focus back to the textarea
         $('#send_textarea').focus();
-
         $('#send_but').trigger('click');
     } else if (sendAs === 'char') {
         sendMessageAs('', `${getContext().name2}\n${prompt}`);
@@ -196,88 +172,169 @@ function sendLoud(sendAs, prompt) {
         sendNarratorMessage('', prompt);
         promptQuietForLoudResponse(sendAs, '');
     }
-    else {
-        console.error(`Unknown sendAs value: ${sendAs}`);
-    }
 }
 
-/**
- * Send the provided prompt to the AI. Determines method based on continuation setting.
- * @param {string} prompt - The prompt text to send to the AI.
- */
+//––––––––––––––––––––––––––––––––––––––––––––
+// SEND PROMPT
+//––––––––––––––––––––––––––––––––––––––––––––
+
 function sendPrompt(prompt) {
     clearTimeout(idleTimer);
     $('#send_textarea').off('input');
 
     if (extension_settings.idle.useRegenerate) {
         $('#option_regenerate').trigger('click');
-        console.debug('Sending idle regenerate');
     } else if (extension_settings.idle.useContinuation) {
         $('#option_continue').trigger('click');
-        console.debug('Sending idle continuation');
     } else if (extension_settings.idle.useImpersonation) {
         $('#option_impersonate').trigger('click');
-        console.debug('Sending idle impersonation');
     } else if (extension_settings.idle.useSwipe) {
         $('.last_mes .swipe_right').click();
-        console.debug('Sending idle swipe');
     } else {
-        console.debug('Sending idle prompt');
-        console.log(extension_settings.idle);
         if (extension_settings.idle.includePrompt) {
             sendLoud(extension_settings.idle.sendAs, prompt);
-        }
-        else {
+        } else {
             promptQuietForLoudResponse(extension_settings.idle.sendAs, prompt);
         }
     }
 }
 
-/**
- * Load the settings HTML and append to the designated area.
- */
-async function loadSettingsHTML() {
-    const settingsHtml = await renderExtensionTemplateAsync(extensionName, 'dropdown');
-    const getContainer = () => $(document.getElementById('idle_container') ?? document.getElementById('extensions_settings2'));
-    getContainer().append(settingsHtml);
+//––––––––––––––––––––––––––––––––––––––––––––
+// GEMINI IMAGE GENERATOR
+//––––––––––––––––––––––––––––––––––––––––––––
+
+async function generateGeminiImage(caption) {
+    const apiKey = extension_settings.idle.geminiApiKey;
+    const model = extension_settings.idle.geminiModel;
+    if (!apiKey) return null;
+
+    const endpoint =
+        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+
+    const body = {
+        contents: [
+            { role: "user", parts: [{ text: caption }] }
+        ],
+        generationConfig: {
+            temperature: 0.8,
+            maxOutputTokens: 2048
+        }
+    };
+
+    const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+    });
+
+    if (!res.ok) return null;
+
+    const data = await res.json();
+
+    const imgPart = data?.candidates?.[0]?.content?.parts?.find(p => p.inline_data?.data);
+    if (!imgPart) return null;
+
+    const base64 = imgPart.inline_data.data;
+    const mime = imgPart.inline_data.mime_type || 'image/png';
+
+    const blob = await (await fetch(`data:${mime};base64,${base64}`)).blob();
+    return blob;
 }
 
-/**
- * Update a specific setting based on user input.
- * @param {string} elementId - The HTML element ID tied to the setting.
- * @param {string} property - The property name in the settings object.
- * @param {boolean} [isCheckbox=false] - Whether the setting is a checkbox.
- */
+//––––––––––––––––––––––––––––––––––––––––––––
+// OBSERVE LAST MESSAGE (OPTION Y2 REPLACE MODE)
+//––––––––––––––––––––––––––––––––––––––––––––
+
+const observer = new MutationObserver(async () => {
+    if (!waitingForIdleMessage) return;
+
+    const last = document.querySelector('.mes:last-child');
+    if (!last) return;
+
+    const nameEl = last.querySelector('.mes_block .ch_name');
+    const textEl = last.querySelector('.mes_text');
+
+    if (!nameEl || !textEl) return;
+
+    const contextName = getContext()?.name2;
+    if (!contextName) return;
+    if (nameEl.textContent.trim() !== contextName.trim()) return;
+
+    // We have the idle selfie message.
+    waitingForIdleMessage = false;
+
+    const caption = textEl.innerText.trim();
+    mostRecentIdleCaption = caption;
+
+    // DELETE the original message completely
+    $(last).remove();
+
+    if (!extension_settings.idle.selfieEnabled) return;
+
+    const imgBlob = await generateGeminiImage(caption);
+
+    let combinedContent = caption;
+
+    if (imgBlob) {
+        const url = URL.createObjectURL(imgBlob);
+        combinedContent = `![selfie](${url})\n\n${caption}`;
+    }
+
+    // Post combined final message as character
+    sendMessageAs('', `${contextName}\n${combinedContent}`);
+});
+
+// Attach observer
+function activateObserver() {
+    const target = document.getElementById('chat');
+    if (target) {
+        observer.observe(target, { childList: true, subtree: true });
+    }
+}
+
+//––––––––––––––––––––––––––––––––––––––––––––
+// SETTINGS HTML
+//––––––––––––––––––––––––––––––––––––––––––––
+
+async function loadSettingsHTML() {
+    const html = await renderExtensionTemplateAsync(extensionName, 'dropdown');
+    const container = document.getElementById('idle_container') ?? document.getElementById('extensions_settings2');
+    $(container).append(html);
+}
+
 function updateSetting(elementId, property, isCheckbox = false) {
     let value = $(`#${elementId}`).val();
-    if (isCheckbox) {
-        value = $(`#${elementId}`).prop('checked');
-    }
-
-    if (property === 'prompts') {
-        value = value.split('\n');
-    }
-
+    if (isCheckbox) value = $(`#${elementId}`).prop('checked');
+    if (property === 'prompts') value = value.split('\n');
     extension_settings.idle[property] = value;
     saveSettingsDebounced();
 }
 
-/**
- * Attach an input listener to a UI component to update the corresponding setting.
- * @param {string} elementId - The HTML element ID tied to the setting.
- * @param {string} property - The property name in the settings object.
- * @param {boolean} [isCheckbox=false] - Whether the setting is a checkbox.
- */
-function attachUpdateListener(elementId, property, isCheckbox = false) {
-    $(`#${elementId}`).on('input', debounce(() => {
-        updateSetting(elementId, property, isCheckbox);
-    }, 250));
+function attachUpdateListener(id, property, isCheckbox = false) {
+    $(`#${id}`).on('input', debounce(() => updateSetting(id, property, isCheckbox), 250));
 }
 
-/**
- * Handle the enabling or disabling of the idle extension.
- * Adds or removes the idle listeners based on the checkbox's state.
- */
+//––––––––––––––––––––––––––––––––––––––––––––
+// IDLE LISTENERS
+//––––––––––––––––––––––––––––––––––––––––––––
+
+const debouncedActivityHandler = debounce((event) => {
+    if ($(event.target).closest('#option_continue').length) return;
+
+    resetIdleTimer();
+    repeatCount = 0;
+}, 250);
+
+function attachIdleListeners() {
+    $(document).on('click keypress', debouncedActivityHandler);
+    document.addEventListener('keydown', debouncedActivityHandler);
+}
+
+function removeIdleListeners() {
+    $(document).off('click keypress', debouncedActivityHandler);
+    document.removeEventListener('keydown', debouncedActivityHandler);
+}
+
 function handleIdleEnabled() {
     if (!extension_settings.idle.enabled) {
         clearTimeout(idleTimer);
@@ -288,12 +345,29 @@ function handleIdleEnabled() {
     }
 }
 
+function toggleIdle() {
+    extension_settings.idle.enabled = !extension_settings.idle.enabled;
+    $('#idle_enabled').prop('checked', extension_settings.idle.enabled);
+    $('#idle_enabled').trigger('input');
+    toastr.info(`Idle Selfie mode ${extension_settings.idle.enabled ? 'enabled' : 'disabled'}.`);
+    resetIdleTimer();
+}
 
-/**
- * Setup input listeners for the various settings and actions related to the idle extension.
- */
+//––––––––––––––––––––––––––––––––––––––––––––
+// INIT
+//––––––––––––––––––––––––––––––––––––––––––––
+
+jQuery(async () => {
+    await loadSettingsHTML();
+    await loadSettings();
+    setupListeners();
+    if (extension_settings.idle.enabled) resetIdleTimer();
+    activateObserver();
+    registerSlashCommand('idle-selfie', toggleIdle, [], '– toggles Idle Selfie mode', true, true);
+});
+
 function setupListeners() {
-    const settingsToWatch = [
+    const list = [
         ['idle_timer', 'timer'],
         ['idle_prompts', 'prompts'],
         ['idle_use_continuation', 'useContinuation', true],
@@ -307,392 +381,17 @@ function setupListeners() {
         ['idle_timer_min', 'timerMin'],
         ['idle_include_prompt', 'includePrompt', true],
 
-        // new settings saved to extension_settings.idle
-        ['idle_selfie_model', 'selfieModel'],
-        ['idle_selfie_aspect', 'selfieAspect'],
-        ['idle_selfie_api_key', 'selfieApiKey'],
-        ['idle_selfie_reference', 'selfieReference'],
+        // NEW
+        ['idle_gemini_api', 'geminiApiKey'],
+        ['idle_gemini_model', 'geminiModel'],
+        ['idle_selfie_enabled', 'selfieEnabled', true]
     ];
-    settingsToWatch.forEach(setting => {
-        attachUpdateListener(...setting);
-    });
 
-    // Idleness listeners, could be made better
+    list.forEach(([id, prop, check]) => attachUpdateListener(id, prop, check));
+
     $('#idle_enabled').on('input', debounce(handleIdleEnabled, 250));
 
-    // Add the idle listeners initially if the idle feature is enabled
-    if (extension_settings.idle.enabled) {
-        attachIdleListeners();
-    }
-
-    // Make continuation, regenerate, impersonation, and swipe mutually exclusive
-    $('#idle_use_continuation, #idle_use_regenerate, #idle_use_impersonation, #idle_use_swipe').on('change', function() {
-        const checkboxId = $(this).attr('id');
-
-        if ($(this).prop('checked')) {
-            // Uncheck the other options
-            if (checkboxId !== 'idle_use_continuation') {
-                $('#idle_use_continuation').prop('checked', false);
-                extension_settings.idle.useContinuation = false;
-            }
-
-            if (checkboxId !== 'idle_use_regenerate') {
-                $('#idle_use_regenerate').prop('checked', false);
-                extension_settings.idle.useRegenerate = false;
-            }
-
-            if (checkboxId !== 'idle_use_impersonation') {
-                $('#idle_use_impersonation').prop('checked', false);
-                extension_settings.idle.useImpersonation = false;
-            }
-
-            if (checkboxId !== 'idle_use_swipe') {
-                $('#idle_use_swipe').prop('checked', false);
-                extension_settings.idle.useSwipe = false;
-            }
-
-            // Save the changes
-            saveSettingsDebounced();
-        }
-    });
-
-    //show/hide timer min parent div
-    $('#idle_random_time').on('input', function () {
-        if ($(this).prop('checked')) {
-            $('#idle_timer_min').parent().show();
-        } else {
-            $('#idle_timer_min').parent().hide();
-        }
-
-        $('#idle_timer').trigger('input');
-    });
-
-    // if we're including the prompt, hide raw from the sendAs dropdown
-    $('#idle_include_prompt').on('input', function () {
-        if ($(this).prop('checked')) {
-            $('#idle_sendAs option[value="raw"]').hide();
-        } else {
-            $('#idle_sendAs option[value="raw"]').show();
-        }
-    });
-
-    //make sure timer min is less than timer
-    $('#idle_timer').on('input', function () {
-        if ($('#idle_random_time').prop('checked')) {
-            if ($(this).val() < $('#idle_timer_min').val()) {
-                $('#idle_timer_min').val($(this).val());
-                $('#idle_timer_min').trigger('input');
-            }
-        }
-    });
-
+    if (extension_settings.idle.enabled) attachIdleListeners();
 }
 
-/**
- * Observe the chat DOM for the next in-character reply and capture it.
- * This is used to get the generated selfie text so we can create the image from it.
- */
-function startSelfieCaptureObserver() {
-    // If an observer is already running, do nothing.
-    if (selfieCaptureObserver) return;
-
-    // Find a container that holds messages. Different ST installs might differ;
-    // common selector used by many plugins is '.messages' or '#messages'
-    const messagesContainer = document.querySelector('.messages') || document.querySelector('#messages') || document.querySelector('.chat_messages');
-
-    if (!messagesContainer) {
-        console.warn('[Idle-Selfie] Could not find messages container to observe.');
-        awaitingSelfieCapture = false;
-        return;
-    }
-
-    // Create observer that watches for added nodes
-    selfieCaptureObserver = new MutationObserver((mutationsList) => {
-        for (const mutation of mutationsList) {
-            for (const node of mutation.addedNodes) {
-                if (!(node instanceof HTMLElement)) continue;
-
-                // Heuristic: check if this new message is from the current character
-                // ST often has elements with classes like 'mes assistant' or data attributes; we'll be flexible.
-                const fromChar = node.querySelector && node.querySelector('.from') ? node.querySelector('.from').textContent.trim() : null;
-                // Another heuristic: message container may have a class indicating author
-                const msgText = node.innerText || node.textContent || '';
-
-                // Only capture once, and only if we're awaiting a selfie reply
-                if (!awaitingSelfieCapture) continue;
-
-                // Determine current character name
-                const ctx = getContext();
-                const charName = ctx?.name2 || '';
-
-                // If the node looks like a message from the character or contains their name indicator, capture it.
-                // We'll be liberal: if the node text has substantial length and doesn't look like system text, use it.
-                if (msgText && msgText.trim().length > 8) {
-                    // Some ST themes embed the speaker name in the message node; if so, ensure it's the character.
-                    if (charName && msgText.includes(charName) === false && fromChar && fromChar !== charName) {
-                        // Not from the character — keep waiting.
-                        continue;
-                    }
-
-                    // We think this is the character's reply.
-                    const selfieText = msgText.trim();
-
-                    // Stop observing
-                    awaitingSelfieCapture = false;
-                    selfieCaptureObserver.disconnect();
-                    selfieCaptureObserver = null;
-
-                    // Kick off image generation (do not block message posting — we'll post a combined message)
-                    handleSelfieTextCapture(selfieText);
-                    return;
-                }
-            }
-        }
-    });
-
-    selfieCaptureObserver.observe(messagesContainer, { childList: true, subtree: true });
-
-    // Safety: if nothing shows up after 30 seconds, stop waiting
-    setTimeout(() => {
-        if (selfieCaptureObserver) {
-            selfieCaptureObserver.disconnect();
-            selfieCaptureObserver = null;
-            awaitingSelfieCapture = false;
-            console.warn('[Idle-Selfie] Timed out waiting for character reply to capture selfie text.');
-        }
-    }, 30000);
-}
-
-/**
- * Called when the assistant's selfie text has been detected in the chat.
- * This will call Gemini to generate an image, then post a combined message (image above text) as the character.
- * If image generation fails, the character's original text will remain (we won't delete it).
- */
-async function handleSelfieTextCapture(selfieText) {
-    try {
-        const ctx = getContext();
-        const charName = ctx?.name2 || 'Character';
-
-        // If image generation is disabled in settings, do nothing further.
-        if (!extension_settings.idle.generateImage) return;
-
-        const apiKey = extension_settings.idle.selfieApiKey;
-        const model = extension_settings.idle.selfieModel || 'gemini-3.0-pro-image-preview';
-        const aspect = extension_settings.idle.selfieAspect || '4:3';
-        const reference = extension_settings.idle.selfieReference || '';
-
-        if (!apiKey || !model) {
-            console.warn('[Idle-Selfie] Missing Gemini API key or model; skipping image generation.');
-            return;
-        }
-
-        // Build the prompt for Gemini. We'll use the selfieText directly as the core prompt,
-        // but also provide some small framing so the image model knows we want a photoreal/selfie style.
-        const imagePrompt = `${selfieText} Photorealistic selfie-style portrait, shallow depth of field, natural lighting, crop for ${aspect}.`;
-
-        const imgObjectUrl = await generateGeminiImage(imagePrompt, apiKey, model, aspect, reference);
-
-        // Post combined message (image above text) as the character
-        if (imgObjectUrl) {
-            // Build message with image first then caption
-            const combined = `![selfie](${imgObjectUrl})\n\n${selfieText}`;
-            sendMessageAs('', `${charName}\n${combined}`);
-        } else {
-            console.warn('[Idle-Selfie] Image generation failed; leaving text-only message as-is.');
-        }
-    } catch (err) {
-        console.error('[Idle-Selfie] Error handling captured selfie text:', err);
-    }
-}
-
-/**
- * Generate an image via Gemini (Gemini Image Preview style).
- * Returns an object URL (blob) suitable for embedding as an <img> src or markdown link.
- */
-async function generateGeminiImage(promptText, apiKey, model, aspect, referenceImageUrl) {
-    try {
-        // Build endpoint and payload per the public docs (v1beta generateContent)
-        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
-
-        // Typical payload shape: contents -> parts with text; generationConfig with imageConfig (aspectRatio)
-        const payload = {
-            contents: [
-                { parts: [{ text: promptText }] }
-            ],
-            generationConfig: {
-                // small sensible defaults; user can edit aspect/model via UI
-                imageConfig: {
-                    aspectRatio: aspect || '4:3',
-                    // imageSize could be added here if desired by user settings
-                },
-                // stochastic params - remain mild for images
-                temperature: 0.8,
-                topP: 0.95,
-            }
-        };
-
-        // If we have a reference image URL, include it as an additional content piece
-        if (referenceImageUrl) {
-            // Many setups prefer reference images in the prompt; include as hint text.
-            payload.contents.unshift({ parts: [{ text: `Reference image: ${referenceImageUrl}` }] });
-        }
-
-        const res = await fetch(endpoint, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-                // note: we pass key as ?key= in URL; Google also supports x-goog-api-key in headers in some contexts.
-            },
-            body: JSON.stringify(payload),
-        });
-
-        if (!res.ok) {
-            const txt = await res.text();
-            console.error('[Idle-Selfie] Gemini API returned error:', res.status, txt);
-            return null;
-        }
-
-        const data = await res.json();
-
-        // Locate inline base64 image data in response
-        // Per docs/earlier examples: candidates[0].content.parts[].inlineData.data with mimeType
-        const candidate = data?.candidates?.[0];
-        if (!candidate) {
-            console.warn('[Idle-Selfie] No candidates returned from Gemini:', data);
-            return null;
-        }
-
-        // find first part that has inlineData
-        let inlinePart = null;
-        for (const part of (candidate.content?.parts || [])) {
-            if (part.inlineData && part.inlineData.data) {
-                inlinePart = part.inlineData;
-                break;
-            }
-        }
-
-        if (!inlinePart) {
-            console.warn('[Idle-Selfie] No inlineData found in Gemini response:', candidate);
-            return null;
-        }
-
-        const b64 = inlinePart.data;
-        const mime = inlinePart.mimeType || 'image/png';
-
-        // convert base64 to blob URL
-        const blob = base64ToBlob(b64, mime);
-        const objectUrl = URL.createObjectURL(blob);
-        return objectUrl;
-    } catch (err) {
-        console.error('[Idle-Selfie] Error generating Gemini image:', err);
-        return null;
-    }
-}
-
-/**
- * Convert base64 string to a Blob
- */
-function base64ToBlob(b64, mime) {
-    const binary = atob(b64);
-    const len = binary.length;
-    const buffer = new Uint8Array(len);
-    for (let i = 0; i < len; i++) {
-        buffer[i] = binary.charCodeAt(i);
-    }
-    return new Blob([buffer], { type: mime });
-}
-
-/**
- * Update a specific setting based on user input.
- * @param {string} elementId - The HTML element ID tied to the setting.
- * @param {string} property - The property name in the settings object.
- * @param {boolean} [isCheckbox=false] - Whether the setting is a checkbox.
- */
-function updateSetting(elementId, property, isCheckbox = false) {
-    let value = $(`#${elementId}`).val();
-    if (isCheckbox) {
-        value = $(`#${elementId}`).prop('checked');
-    }
-
-    if (property === 'prompts') {
-        value = value.split('\n');
-    }
-
-    extension_settings.idle[property] = value;
-    saveSettingsDebounced();
-}
-
-/**
- * Attach an input listener to a UI component to update the corresponding setting.
- * @param {string} elementId - The HTML element ID tied to the setting.
- * @param {string} property - The property name in the settings object.
- * @param {boolean} [isCheckbox=false] - Whether the setting is a checkbox.
- */
-function attachUpdateListener(elementId, property, isCheckbox = false) {
-    $(`#${elementId}`).on('input', debounce(() => {
-        updateSetting(elementId, property, isCheckbox);
-    }, 250));
-}
-
-/**
- * Handle the enabling or disabling of the idle extension.
- * Adds or removes the idle listeners based on the checkbox's state.
- */
-function handleIdleEnabled() {
-    if (!extension_settings.idle.enabled) {
-        clearTimeout(idleTimer);
-        removeIdleListeners();
-    } else {
-        resetIdleTimer();
-        attachIdleListeners();
-    }
-}
-
-
-const debouncedActivityHandler = debounce((event) => {
-    // Check if the event target (or any of its parents) has the id "option_continue"
-    if ($(event.target).closest('#option_continue').length) {
-        return; // Do not proceed if the click was on (or inside) an element with id "option_continue"
-    }
-
-    console.debug('Activity detected, resetting idle timer');
-    resetIdleTimer();
-    repeatCount = 0;
-}, 250);
-
-function attachIdleListeners() {
-    $(document).on('click keypress', debouncedActivityHandler);
-    document.addEventListener('keydown', debouncedActivityHandler);
-}
-
-/**
- * Remove idle-specific listeners.
- */
-function removeIdleListeners() {
-    $(document).off('click keypress', debouncedActivityHandler);
-    document.removeEventListener('keydown', debouncedActivityHandler);
-}
-
-function toggleIdle() {
-    extension_settings.idle.enabled = !extension_settings.idle.enabled;
-    $('#idle_enabled').prop('checked', extension_settings.idle.enabled);
-    $('#idle_enabled').trigger('input');
-    toastr.info(`Idle Selfie mode ${extension_settings.idle.enabled ? 'enabled' : 'disabled'}.`);
-    resetIdleTimer();
-}
-
-jQuery(async () => {
-    await loadSettingsHTML();
-    loadSettings();
-    setupListeners();
-    if (extension_settings.idle.enabled) {
-        resetIdleTimer();
-    }
-    // once the doc is ready, check if random time is checked and hide/show timer min
-    if ($('#idle_random_time').prop('checked')) {
-        $('#idle_timer_min').parent().show();
-    }
-    // NOTE: changed slash command name so it doesn't collide with original Idle
-    registerSlashCommand('idle-selfie', toggleIdle, [], '– toggles Idle Selfie mode', true, true);
-});
 
